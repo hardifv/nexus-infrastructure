@@ -1,3 +1,7 @@
+Create only a root-level AGENTS.md file. Do not modify any Terraform files.
+
+Use exactly the following content:
+
 # Operation Offer — Nexus Infrastructure
 
 ## Purpose

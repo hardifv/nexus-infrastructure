@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.10.0"
 
   required_providers {
     aws = {
@@ -7,7 +7,4 @@ terraform {
       version = "~> 6.0"
     }
   }
-
-  # We will configure the S3 backend after creating the bootstrap resources.
 }
-

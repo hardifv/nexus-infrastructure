@@ -3,4 +3,6 @@
 *.tfstate.*
 *.tfplan
 *.tfvars.local
+backend.hcl
+/bootstrap/terraform.tfvars
 crash.log

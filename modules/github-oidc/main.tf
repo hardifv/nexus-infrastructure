@@ -229,6 +229,8 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
       "ec2:ReleaseAddress",
       "ec2:ReplaceRoute",
       "ec2:ReplaceRouteTableAssociation",
+      "ec2:RevokeSecurityGroupEgress",
+      "ec2:RevokeSecurityGroupIngress",
     ]
     resources = ["*"]
 

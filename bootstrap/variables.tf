@@ -22,3 +22,12 @@ variable "environment" {
 
 }
 
+variable "github_repository" {
+  description = "GitHub repository in owner/repository format."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "github_repository must use owner/repository format."
+  }
+}

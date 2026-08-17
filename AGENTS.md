@@ -211,16 +211,12 @@ The current repository is `nexus-infrastructure`.
 
 Current status:
 
-- `modules/network` already exists.
-- Only `environments/dev` exists.
-- `environments/dev/main.tf` is intentionally incomplete.
-- `environments/dev/outputs.tf` is intentionally incomplete.
-- The network module is not yet consumed by the dev environment.
-- A real `terraform.tfvars` has not been created.
-- The remote backend has not been configured.
-- Terraform has not yet been applied.
+- The reusable dev network module and the `environments/dev` composition are complete.
+- The remote S3 backend is configured with S3 native state locking through `use_lockfile = true`.
+- The backend bootstrap infrastructure has been applied.
+- The dev network infrastructure has not been applied.
+- Current work is GitHub Actions authentication through AWS OIDC.
 - Staging and production must not be created yet.
-- ALB, EC2, RDS, EBS, Route 53, IAM, and application delivery are outside the current checkpoint.
 
 ## Collaboration model
 
@@ -265,3 +261,19 @@ The user should:
 - If the user becomes blocked by syntax, provide a focused example rather than the entire project.
 - Help the user explain decisions using problem, solution, and benefit.
 - Communicate in clear Spanish while keeping technical identifiers and terminology in English.
+
+## Git strategy
+
+This project uses Trunk-Based Development.
+
+- `main` is the only permanent branch.
+- All work must use short-lived branches created from an updated `main`.
+- Open a Pull Request into `main`.
+- Require successful CI checks before merge.
+- Use squash merge.
+- Delete the feature branch after merge.
+- Do not create permanent `develop`, `release`, or environment branches.
+- Environments are controlled through separate Terraform roots, remote state, GitHub Environments, and deployment approvals—not Git branches.
+- Pull Requests run Terraform validation and plan.
+- Merges to `main` may deploy to dev.
+- Staging and production deployments require approvals.

@@ -10,3 +10,19 @@ module "backend" {
     CostCenter = "Learning"
   }
 }
+
+module "github_oidc" {
+  source = "../modules/github-oidc"
+
+  github_repository = var.github_repository
+  project_name      = var.project_name
+  environment_name  = "dev"
+  state_bucket_arn  = module.backend.bucket_arn
+  state_key         = "nexus/dev/terraform.tfstate"
+  aws_region        = var.aws_region
+
+  tags = {
+    Owner      = "OperationOffer"
+    CostCenter = "Learning"
+  }
+}

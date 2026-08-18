@@ -2,6 +2,9 @@ locals {
   oidc_url       = "https://token.actions.githubusercontent.com"
   oidc_claim_key = "token.actions.githubusercontent.com"
 
+  github_repository_parts             = split("/", var.github_repository)
+  immutable_repository_subject_prefix = "repo:${local.github_repository_parts[0]}@${var.github_owner_id}/${local.github_repository_parts[1]}@${var.github_repository_id}"
+
   plan_role_name  = "${var.project_name}-terraform-plan"
   apply_role_name = "${var.project_name}-terraform-${var.environment_name}-apply"
 
@@ -35,7 +38,7 @@ data "aws_iam_policy_document" "terraform_plan_assume_role" {
     condition {
       test     = "StringEquals"
       variable = "${local.oidc_claim_key}:sub"
-      values   = ["repo:${var.github_repository}:pull_request"]
+      values   = ["${local.immutable_repository_subject_prefix}:pull_request"]
     }
   }
 }
@@ -69,7 +72,7 @@ data "aws_iam_policy_document" "terraform_apply_assume_role" {
     condition {
       test     = "StringEquals"
       variable = "${local.oidc_claim_key}:sub"
-      values   = ["repo:${var.github_repository}:environment:${var.environment_name}"]
+      values   = ["${local.immutable_repository_subject_prefix}:environment:${var.environment_name}"]
     }
   }
 }

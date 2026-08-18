@@ -1,0 +1,77 @@
+name: Terraform Dev Apply
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-dev-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply
+    environment: dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: environments/dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.14.7
+          terraform_wrapper: false
+
+      - name: Authenticate to AWS with OIDC
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+          role-session-name: terraform-dev-apply-${{ github.run_id }}
+
+      - name: Initialize Terraform with remote backend
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          : "${TF_STATE_BUCKET:?TF_STATE_BUCKET repository variable is required}"
+          terraform init -input=false \
+            -backend-config=backend-ci.hcl \
+            -backend-config="bucket=${TF_STATE_BUCKET}"
+
+      - name: Validate Terraform
+        run: terraform validate -no-color
+
+      - name: Create Terraform plan
+        run: terraform plan -input=false -lock-timeout=5m -out=dev.tfplan
+
+      - name: Show Terraform plan
+        run: terraform show -no-color dev.tfplan
+
+      - name: Reject destructive changes
+        run: |
+          plan_json="${RUNNER_TEMP}/dev.tfplan.json"
+          terraform show -json dev.tfplan > "${plan_json}"
+
+          if ! jq -e 'all(.resource_changes[]?.change.actions[]?; . != "delete")' "${plan_json}" > /dev/null; then
+            echo "::error::Terraform plan contains a delete or replacement action."
+            exit 1
+          fi
+
+      - name: Apply reviewed Terraform plan
+        run: terraform apply -input=false dev.tfplan
+
+      - name: Confirm infrastructure convergence
+        run: terraform plan -input=false -lock-timeout=5m -detailed-exitcode

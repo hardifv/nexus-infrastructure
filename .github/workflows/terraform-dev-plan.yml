@@ -7,7 +7,7 @@ on:
     paths:
       - environments/dev/**
       - modules/**
-      - .github/workflows/terraform-dev-plan.yml
+      - .github/workflows/terraform-dev-*.yml
 
 permissions:
   contents: read

@@ -11,12 +11,24 @@ locals {
 }
 
 resource "aws_vpc" "this" {
+  #checkov:skip=CKV2_AWS_11:VPC Flow Logs are deferred for the cost-controlled dev checkpoint and are required before production.
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-vpc"
+  })
+}
+
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
+
+  ingress = []
+  egress  = []
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-default-sg"
   })
 }
 
@@ -114,4 +126,3 @@ resource "aws_route_table_association" "private" {
   subnet_id      = each.value.id
   route_table_id = aws_route_table.private.id
 }
-

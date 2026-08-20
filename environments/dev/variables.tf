@@ -28,3 +28,7 @@ variable "private_subnets" {
   type        = map(string)
 }
 
+variable "allowed_client_cidrs" {
+  description = "IPv4 CIDR blocks allowed to access the ALB on HTTP and HTTPS."
+  type        = set(string)
+}

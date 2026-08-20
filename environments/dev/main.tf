@@ -19,3 +19,20 @@ module "network" {
     CostCenter = "Learning"
   }
 }
+
+module "security_groups" {
+  source = "../../modules/security-groups"
+
+  vpc_id               = module.network.vpc_id
+  vpc_cidr             = var.vpc_cidr
+  project_name         = var.project_name
+  environment          = var.environment
+  allowed_client_cidrs = var.allowed_client_cidrs
+
+
+
+  tags = {
+    Owner      = "OperationOffer"
+    CostCenter = "Learning"
+  }
+}

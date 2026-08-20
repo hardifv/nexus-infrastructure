@@ -12,3 +12,5 @@ private_subnets = {
   us-east-1a = "10.10.10.0/24"
   us-east-1b = "10.10.11.0/24"
 }
+
+allowed_client_cidrs = ["0.0.0.0/0"]

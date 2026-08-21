@@ -105,3 +105,16 @@ jobs:
             echo "::error::Terraform state is not empty after the destroy apply."
             exit 1
           fi
+
+      - name: Notify Slack
+        if: always()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: >-
+              ${{ github.workflow }} | status: ${{ job.status }} | environment: dev |
+              actor: ${{ github.actor }} | repository: ${{ github.repository }} |
+              ref: ${{ github.ref_name }} | run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

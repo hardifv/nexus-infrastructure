@@ -23,13 +23,27 @@ module "network" {
 module "security_groups" {
   source = "../../modules/security-groups"
 
-  vpc_id               = module.network.vpc_id
-  vpc_cidr             = var.vpc_cidr
   project_name         = var.project_name
   environment          = var.environment
+  vpc_cidr             = var.vpc_cidr
+  vpc_id               = module.network.vpc_id
   allowed_client_cidrs = var.allowed_client_cidrs
 
 
+  tags = {
+    Owner      = "OperationOffer"
+    CostCenter = "Learning"
+  }
+}
+
+module "load_balancer" {
+  source = "../../modules/load-balancer"
+
+  project_name          = var.project_name
+  environment           = var.environment
+  vpc_id                = module.network.vpc_id
+  public_subnet_ids     = toset(values(module.network.public_subnet_ids))
+  alb_security_group_id = module.security_groups.alb_security_group_id
 
   tags = {
     Owner      = "OperationOffer"

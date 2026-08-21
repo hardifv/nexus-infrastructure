@@ -8,6 +8,11 @@ locals {
   plan_role_name  = "${var.project_name}-terraform-plan"
   apply_role_name = "${var.project_name}-terraform-${var.environment_name}-apply"
 
+  load_balancer_name_prefix = substr(trim(replace(lower("${var.project_name}-${var.environment_name}"), "/[^a-z0-9-]/", "-"), "-"), 0, 23)
+  load_balancer_arn_pattern = "arn:*:elasticloadbalancing:${var.aws_region}:*:loadbalancer/app/${local.load_balancer_name_prefix}-alb/*"
+  target_group_arn_pattern  = "arn:*:elasticloadbalancing:${var.aws_region}:*:targetgroup/${local.load_balancer_name_prefix}-nexus-tg/*"
+  http_listener_arn_pattern = "arn:*:elasticloadbalancing:${var.aws_region}:*:listener/app/${local.load_balancer_name_prefix}-alb/*/*"
+
   common_tags = merge(var.tags, {
     Project   = var.project_name
     ManagedBy = "Terraform"
@@ -133,6 +138,27 @@ data "aws_iam_policy_document" "terraform_plan_permissions" {
       values   = [var.aws_region]
     }
   }
+
+  statement {
+    sid    = "DescribeLoadBalancerResources"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:DescribeListenerAttributes",
+      "elasticloadbalancing:DescribeListeners",
+      "elasticloadbalancing:DescribeLoadBalancerAttributes",
+      "elasticloadbalancing:DescribeLoadBalancers",
+      "elasticloadbalancing:DescribeTags",
+      "elasticloadbalancing:DescribeTargetGroupAttributes",
+      "elasticloadbalancing:DescribeTargetGroups",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
 }
 
 resource "aws_iam_policy" "terraform_plan" {
@@ -193,6 +219,101 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
     effect    = "Allow"
     actions   = ["ec2:Describe*"]
     resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid    = "DescribeLoadBalancerResources"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:DescribeListenerAttributes",
+      "elasticloadbalancing:DescribeListeners",
+      "elasticloadbalancing:DescribeLoadBalancerAttributes",
+      "elasticloadbalancing:DescribeLoadBalancers",
+      "elasticloadbalancing:DescribeTags",
+      "elasticloadbalancing:DescribeTargetGroupAttributes",
+      "elasticloadbalancing:DescribeTargetGroups",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid    = "CreateLoadBalancerResources"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:CreateListener",
+      "elasticloadbalancing:CreateLoadBalancer",
+      "elasticloadbalancing:CreateTargetGroup",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid    = "ManageApplicationLoadBalancer"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:AddTags",
+      "elasticloadbalancing:DeleteLoadBalancer",
+      "elasticloadbalancing:ModifyLoadBalancerAttributes",
+      "elasticloadbalancing:RemoveTags",
+      "elasticloadbalancing:SetSecurityGroups",
+      "elasticloadbalancing:SetSubnets",
+    ]
+    resources = [local.load_balancer_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid    = "ManageNexusTargetGroup"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:AddTags",
+      "elasticloadbalancing:DeleteTargetGroup",
+      "elasticloadbalancing:ModifyTargetGroup",
+      "elasticloadbalancing:ModifyTargetGroupAttributes",
+      "elasticloadbalancing:RemoveTags",
+    ]
+    resources = [local.target_group_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid    = "ManageHTTPListener"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:AddTags",
+      "elasticloadbalancing:DeleteListener",
+      "elasticloadbalancing:ModifyListener",
+      "elasticloadbalancing:RemoveTags",
+    ]
+    resources = [local.http_listener_arn_pattern]
 
     condition {
       test     = "StringEquals"

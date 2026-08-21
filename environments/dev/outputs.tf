@@ -39,3 +39,28 @@ output "rds_security_group_id" {
   description = "ID of the RDS PostgreSQL Security Group."
   value       = module.security_groups.rds_security_group_id
 }
+
+output "load_balancer_arn" {
+  description = "ARN of the Application Load Balancer."
+  value       = module.load_balancer.load_balancer_arn
+}
+
+output "load_balancer_dns_name" {
+  description = "DNS name of the Application Load Balancer."
+  value       = module.load_balancer.load_balancer_dns_name
+}
+
+output "load_balancer_zone_id" {
+  description = "Canonical hosted zone ID of the Application Load Balancer."
+  value       = module.load_balancer.load_balancer_zone_id
+}
+
+output "target_group_arn" {
+  description = "ARN of the Nexus Target Group."
+  value       = module.load_balancer.target_group_arn
+}
+
+output "http_listener_arn" {
+  description = "ARN of the HTTP listener."
+  value       = module.load_balancer.http_listener_arn
+}

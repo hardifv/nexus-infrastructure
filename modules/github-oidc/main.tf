@@ -8,7 +8,7 @@ locals {
   plan_role_name  = "${var.project_name}-terraform-plan"
   apply_role_name = "${var.project_name}-terraform-${var.environment_name}-apply"
 
-  load_balancer_name_prefix = substr(trim(replace(lower("${var.project_name}-${var.environment_name}"), "/[^a-z0-9-]/", "-"), "-"), 0, 23)
+  load_balancer_name_prefix = substr(trim(replace(lower("${var.managed_project_name}-${var.environment_name}"), "/[^a-z0-9-]/", "-"), "-"), 0, 23)
   load_balancer_arn_pattern = "arn:*:elasticloadbalancing:${var.aws_region}:*:loadbalancer/app/${local.load_balancer_name_prefix}-alb/*"
   target_group_arn_pattern  = "arn:*:elasticloadbalancing:${var.aws_region}:*:targetgroup/${local.load_balancer_name_prefix}-nexus-tg/*"
   http_listener_arn_pattern = "arn:*:elasticloadbalancing:${var.aws_region}:*:listener/app/${local.load_balancer_name_prefix}-alb/*/*"
@@ -266,10 +266,66 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
   }
 
   statement {
+    sid       = "TagApplicationLoadBalancerOnCreate"
+    effect    = "Allow"
+    actions   = ["elasticloadbalancing:AddTags"]
+    resources = [local.load_balancer_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "elasticloadbalancing:CreateAction"
+      values   = ["CreateLoadBalancer"]
+    }
+  }
+
+  statement {
+    sid       = "TagNexusTargetGroupOnCreate"
+    effect    = "Allow"
+    actions   = ["elasticloadbalancing:AddTags"]
+    resources = [local.target_group_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "elasticloadbalancing:CreateAction"
+      values   = ["CreateTargetGroup"]
+    }
+  }
+
+  statement {
+    sid       = "TagHTTPListenerOnCreate"
+    effect    = "Allow"
+    actions   = ["elasticloadbalancing:AddTags"]
+    resources = [local.http_listener_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "elasticloadbalancing:CreateAction"
+      values   = ["CreateListener"]
+    }
+  }
+
+  statement {
     sid    = "ManageApplicationLoadBalancer"
     effect = "Allow"
     actions = [
-      "elasticloadbalancing:AddTags",
       "elasticloadbalancing:DeleteLoadBalancer",
       "elasticloadbalancing:ModifyLoadBalancerAttributes",
       "elasticloadbalancing:RemoveTags",
@@ -289,7 +345,6 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
     sid    = "ManageNexusTargetGroup"
     effect = "Allow"
     actions = [
-      "elasticloadbalancing:AddTags",
       "elasticloadbalancing:DeleteTargetGroup",
       "elasticloadbalancing:ModifyTargetGroup",
       "elasticloadbalancing:ModifyTargetGroupAttributes",
@@ -308,7 +363,6 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
     sid    = "ManageHTTPListener"
     effect = "Allow"
     actions = [
-      "elasticloadbalancing:AddTags",
       "elasticloadbalancing:DeleteListener",
       "elasticloadbalancing:ModifyListener",
       "elasticloadbalancing:RemoveTags",

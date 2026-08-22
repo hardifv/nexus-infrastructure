@@ -15,6 +15,16 @@ variable "project_name" {
 
 }
 
+variable "managed_project_name" {
+  description = "Project name used by the dev resources managed through the Terraform IAM policies."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9-]*$", var.managed_project_name))
+    error_message = "managed_project_name must start with a letter or number and contain only letters, numbers, or hyphens."
+  }
+}
+
 variable "environment" {
   description = "Environment or scope associated with the Terraform state bucket."
   type        = string

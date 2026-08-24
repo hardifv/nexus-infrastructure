@@ -1,5 +1,6 @@
 name: Terraform Dev Destroy
 
+#checkov:skip=CKV_GHA_7: Manual workflow_dispatch inputs are intentionally required to protect this destructive workflow from accidental execution.
 on:
   workflow_dispatch:
     inputs:

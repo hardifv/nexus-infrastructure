@@ -19,6 +19,7 @@ resource "aws_db_subnet_group" "this" {
 }
 
 resource "aws_db_instance" "this" {
+  #checkov:skip=CKV2_AWS_30: PostgreSQL query logging requires a dedicated parameter group and is deferred to the monitoring checkpoint to define safe logging, retention, and CloudWatch export.
   # checkov:skip=CKV_AWS_161:JDBC username/password authentication is the accepted dev integration; IAM DB authentication is out of scope.
   # checkov:skip=CKV_AWS_293:Deletion protection is intentionally disabled in dev to support controlled teardown.
   # checkov:skip=CKV_AWS_353:Performance Insights is deferred to the dedicated monitoring checkpoint.

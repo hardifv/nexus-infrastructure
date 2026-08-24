@@ -1,7 +1,3 @@
-Create only a root-level AGENTS.md file. Do not modify any Terraform files.
-
-Use exactly the following content:
-
 # Operation Offer — Nexus Infrastructure
 
 ## Purpose
@@ -277,3 +273,60 @@ This project uses Trunk-Based Development.
 - Pull Requests run Terraform validation and plan.
 - Merges to `main` may deploy to dev.
 - Staging and production deployments require approvals.
+
+## Reusable review commands
+
+### Validate the current module
+
+Review only the changed child module using git scope inspection, `terraform fmt -check`, isolated initialization with the backend disabled, `terraform validate`, Checkov without `--soft-fail`, and `git diff --check`. Review its architecture, inputs, outputs, security, and naming. Do not run a root plan when the module is not consumed.
+
+### Validate and plan the current checkpoint
+
+Run the current-module review and, when the module is consumed by `bootstrap` or `environments/dev`, initialize using the established backend procedure, generate and inspect a saved plan, and report add, change, destroy, and replacement actions. Never apply.
+
+### Finalize the current checkpoint
+
+Run the complete validation and plan. Commit only when every documented gate passes and commit authorization is explicitly included in the request. Never push, merge, apply, or destroy unless separately authorized.
+
+### Commit and push the current checkpoint
+
+1. Confirm the current branch is not `main`, the working tree contains only checkpoint files, the required validation gate passed, and no saved plans, secrets, credentials, tfstate, backend files, or ignored tfvars will be staged.
+2. Run `git diff --check`.
+3. Stage only checkpoint-approved files.
+4. Create one Conventional Commit using the message explicitly supplied by the user. If none was supplied, propose one and stop for confirmation.
+5. Confirm the commit contents, clean working tree, and commit count ahead of `main`.
+6. Push with `git push -u origin <current-branch>`.
+7. Report the commit SHA and Pull Request URL.
+
+Never push directly to `main`, force-push, merge, create a Pull Request, apply or destroy Terraform, or amend or rebase unless explicitly authorized.
+
+### Clean up after merge
+
+1. Record the current feature branch and verify through GitHub or Git metadata that its Pull Request was merged into `main`; stop if the merge cannot be confirmed.
+2. Switch to `main`, run `git pull --ff-only`, then `git fetch --prune`.
+3. Delete the local feature branch only after confirming the merge, preferring `git branch -d`.
+4. If squash merge causes `git branch -d` to fail, verify the corresponding Pull Request is merged into `main` before allowing deletion of that exact local branch.
+5. Never delete `main`, an unmerged branch, or a remote branch unless explicitly requested.
+6. Confirm the current branch is `main`, `main` matches `origin/main`, and the working tree is clean.
+
+### Start checkpoint `<branch-name>`
+
+1. Require an explicit branch name matching `feat/<name>`, `fix/<name>`, `security/<name>`, or `ci/<name>`.
+2. Confirm the current branch is `main`, the working tree is clean, and `main` is synchronized using `git pull --ff-only`.
+3. Create and switch with `git switch -c <branch-name>`.
+4. Report the current branch and clean status.
+
+Never create a checkpoint branch from another feature branch unless explicitly authorized. Terraform apply and destroy, Pull Request approval, and merge remain manual and separately authorized.
+
+Begin every review report with exactly `READY` or `NOT READY`.
+
+## Learning workflow
+
+The user owns implementation and corrections inside child modules.
+
+When reviewing `modules/*`:
+
+- Identify defects and explain what must change.
+- Guide the user toward the correct file, resource, variable or output.
+- Do not implement child-module corrections unless the user explicitly authorizes it.
+- After the user finishes, validate the result independently.

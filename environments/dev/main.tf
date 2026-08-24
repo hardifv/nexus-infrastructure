@@ -50,3 +50,17 @@ module "load_balancer" {
     CostCenter = "Learning"
   }
 }
+
+module "rds_postgresql" {
+  source = "../../modules/rds-postgresql"
+
+  project_name          = var.project_name
+  environment           = var.environment
+  private_subnet_ids    = toset(values(module.network.private_subnet_ids))
+  rds_security_group_id = module.security_groups.rds_security_group_id
+
+  tags = {
+    Owner      = "OperationOffer"
+    CostCenter = "Learning"
+  }
+}

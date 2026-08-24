@@ -64,3 +64,29 @@ output "http_listener_arn" {
   description = "ARN of the HTTP listener."
   value       = module.load_balancer.http_listener_arn
 }
+
+output "rds_db_instance_id" {
+  description = "Identifier of the dev RDS PostgreSQL instance."
+  value       = module.rds_postgresql.db_instance_id
+}
+
+output "rds_endpoint" {
+  description = "Connection endpoint including the port of the dev RDS PostgreSQL instance."
+  value       = module.rds_postgresql.endpoint
+}
+
+output "rds_port" {
+  description = "Port of the dev RDS PostgreSQL instance."
+  value       = module.rds_postgresql.port
+}
+
+output "rds_database_name" {
+  description = "Name of the initial dev PostgreSQL database."
+  value       = module.rds_postgresql.database_name
+}
+
+output "rds_master_user_secret_arn" {
+  description = "ARN of the RDS-managed Secrets Manager secret containing the dev master credentials."
+  value       = module.rds_postgresql.master_user_secret_arn
+  sensitive   = true
+}

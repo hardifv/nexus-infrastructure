@@ -13,6 +13,9 @@ locals {
   target_group_arn_pattern  = "arn:*:elasticloadbalancing:${var.aws_region}:*:targetgroup/${local.load_balancer_name_prefix}-nexus-tg/*"
   http_listener_arn_pattern = "arn:*:elasticloadbalancing:${var.aws_region}:*:listener/app/${local.load_balancer_name_prefix}-alb/*/*"
 
+  rds_db_instance_arn_pattern  = "arn:*:rds:${var.aws_region}:*:db:${var.managed_project_name}-${var.environment_name}-postgresql"
+  rds_subnet_group_arn_pattern = "arn:*:rds:${var.aws_region}:*:subgrp:${var.managed_project_name}-${var.environment_name}-rds-subnets"
+
   common_tags = merge(var.tags, {
     Project   = var.project_name
     ManagedBy = "Terraform"
@@ -159,6 +162,38 @@ data "aws_iam_policy_document" "terraform_plan_permissions" {
       values   = [var.aws_region]
     }
   }
+
+  statement {
+    sid    = "DescribeRDSResources"
+    effect = "Allow"
+    actions = [
+      "rds:DescribeDBInstances",
+      "rds:DescribeDBSubnetGroups",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid     = "ReadRDSResourceTags"
+    effect  = "Allow"
+    actions = ["rds:ListTagsForResource"]
+    resources = [
+      local.rds_db_instance_arn_pattern,
+      local.rds_subnet_group_arn_pattern,
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
 }
 
 resource "aws_iam_policy" "terraform_plan" {
@@ -240,6 +275,38 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
       "elasticloadbalancing:DescribeTargetGroups",
     ]
     resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid    = "DescribeRDSResources"
+    effect = "Allow"
+    actions = [
+      "rds:DescribeDBInstances",
+      "rds:DescribeDBSubnetGroups",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid     = "ReadRDSResourceTags"
+    effect  = "Allow"
+    actions = ["rds:ListTagsForResource"]
+    resources = [
+      local.rds_db_instance_arn_pattern,
+      local.rds_subnet_group_arn_pattern,
+    ]
 
     condition {
       test     = "StringEquals"
@@ -377,6 +444,59 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
   }
 
   statement {
+    sid    = "ManageRDSDBInstance"
+    effect = "Allow"
+    actions = [
+      "rds:CreateDBInstance",
+      "rds:DeleteDBInstance",
+      "rds:ModifyDBInstance",
+    ]
+    resources = [local.rds_db_instance_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid    = "ManageRDSDBSubnetGroup"
+    effect = "Allow"
+    actions = [
+      "rds:CreateDBSubnetGroup",
+      "rds:DeleteDBSubnetGroup",
+      "rds:ModifyDBSubnetGroup",
+    ]
+    resources = [local.rds_subnet_group_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid    = "ManageRDSResourceTags"
+    effect = "Allow"
+    actions = [
+      "rds:AddTagsToResource",
+      "rds:RemoveTagsFromResource",
+    ]
+    resources = [
+      local.rds_db_instance_arn_pattern,
+      local.rds_subnet_group_arn_pattern,
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
     sid    = "ManageDevNetworkResources"
     effect = "Allow"
     actions = [
@@ -402,6 +522,7 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
       "ec2:DeleteTags",
       "ec2:DeleteVpc",
       "ec2:DetachInternetGateway",
+      "ec2:DisassociateAddress",
       "ec2:DisassociateRouteTable",
       "ec2:ModifySecurityGroupRules",
       "ec2:ModifySubnetAttribute",

@@ -278,7 +278,7 @@ This project uses Trunk-Based Development.
 
 ### Validate the current module
 
-Review only the changed child module using git scope inspection, `terraform fmt -check`, isolated initialization with the backend disabled, `terraform validate`, Checkov without `--soft-fail`, and `git diff --check`. Review its architecture, inputs, outputs, security, and naming. Do not run a root plan when the module is not consumed.
+Review only the changed child module using git scope inspection, `terraform fmt -check`, isolated initialization with the backend disabled, `terraform validate`, Checkov without `--soft-fail`, and `git diff --check`. Review its architecture, inputs, outputs, security, and naming. Do not run a root plan when the module is not consumed. If formatting is required, run `terraform fmt` against only the authorized module files and report the changes.
 
 ### Validate and plan the current checkpoint
 

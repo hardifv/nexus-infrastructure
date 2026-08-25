@@ -90,3 +90,18 @@ output "rds_master_user_secret_arn" {
   value       = module.rds_postgresql.master_user_secret_arn
   sensitive   = true
 }
+
+output "nexus_data_volume_id" {
+  description = "ID of the persistent Nexus EBS volume."
+  value       = module.ebs_volume.volume_id
+}
+
+output "nexus_data_volume_arn" {
+  description = "ARN of the persistent Nexus EBS volume."
+  value       = module.ebs_volume.volume_arn
+}
+
+output "nexus_data_volume_availability_zone" {
+  description = "Availability Zone of the persistent Nexus EBS volume."
+  value       = module.ebs_volume.availability_zone
+}

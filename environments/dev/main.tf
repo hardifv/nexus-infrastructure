@@ -64,3 +64,16 @@ module "rds_postgresql" {
     CostCenter = "Learning"
   }
 }
+
+module "ebs_volume" {
+  source = "../../modules/ebs-persistent-storage"
+
+  project_name      = var.project_name
+  environment       = var.environment
+  availability_zone = sort(keys(module.network.private_subnet_ids))[0]
+
+  tags = {
+    Owner      = "OperationOffer"
+    CostCenter = "Learning"
+  }
+}

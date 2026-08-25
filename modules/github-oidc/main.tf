@@ -15,6 +15,7 @@ locals {
 
   rds_db_instance_arn_pattern  = "arn:*:rds:${var.aws_region}:*:db:${var.managed_project_name}-${var.environment_name}-postgresql"
   rds_subnet_group_arn_pattern = "arn:*:rds:${var.aws_region}:*:subgrp:${var.managed_project_name}-${var.environment_name}-rds-subnets"
+  ebs_volume_arn_pattern       = "arn:*:ec2:${var.aws_region}:*:volume/*"
 
   common_tags = merge(var.tags, {
     Project   = var.project_name
@@ -493,6 +494,71 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
       test     = "StringEquals"
       variable = "aws:RequestedRegion"
       values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid       = "CreateTaggedEBSVolume"
+    effect    = "Allow"
+    actions   = ["ec2:CreateVolume"]
+    resources = [local.ebs_volume_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid    = "ManageTaggedEBSVolume"
+    effect = "Allow"
+    actions = [
+      "ec2:DeleteVolume",
+      "ec2:ModifyVolume",
+    ]
+    resources = [local.ebs_volume_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/ManagedBy"
+      values   = ["Terraform"]
     }
   }
 

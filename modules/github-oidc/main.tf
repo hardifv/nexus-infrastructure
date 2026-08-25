@@ -498,6 +498,56 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
   }
 
   statement {
+    sid    = "ManageDevNetworkResources"
+    effect = "Allow"
+    actions = [
+      "ec2:AllocateAddress",
+      "ec2:AssociateRouteTable",
+      "ec2:AttachInternetGateway",
+      "ec2:AuthorizeSecurityGroupEgress",
+      "ec2:AuthorizeSecurityGroupIngress",
+      "ec2:CreateInternetGateway",
+      "ec2:CreateNatGateway",
+      "ec2:CreateRoute",
+      "ec2:CreateRouteTable",
+      "ec2:CreateSecurityGroup",
+      "ec2:CreateSubnet",
+      "ec2:CreateTags",
+      "ec2:CreateVpc",
+      "ec2:DeleteInternetGateway",
+      "ec2:DeleteNatGateway",
+      "ec2:DeleteRoute",
+      "ec2:DeleteRouteTable",
+      "ec2:DeleteSecurityGroup",
+      "ec2:DeleteSubnet",
+      "ec2:DeleteTags",
+      "ec2:DeleteVpc",
+      "ec2:DetachInternetGateway",
+      "ec2:DisassociateAddress",
+      "ec2:DisassociateRouteTable",
+      "ec2:ModifySecurityGroupRules",
+      "ec2:ModifySubnetAttribute",
+      "ec2:ModifyVpcAttribute",
+      "ec2:ReleaseAddress",
+      "ec2:ReplaceRoute",
+      "ec2:ReplaceRouteTableAssociation",
+      "ec2:RevokeSecurityGroupEgress",
+      "ec2:RevokeSecurityGroupIngress",
+      "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+      "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "terraform_apply_ebs_permissions" {
+  statement {
     sid       = "CreateTaggedEBSVolume"
     effect    = "Allow"
     actions   = ["ec2:CreateVolume"]
@@ -561,54 +611,6 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
       values   = ["Terraform"]
     }
   }
-
-  statement {
-    sid    = "ManageDevNetworkResources"
-    effect = "Allow"
-    actions = [
-      "ec2:AllocateAddress",
-      "ec2:AssociateRouteTable",
-      "ec2:AttachInternetGateway",
-      "ec2:AuthorizeSecurityGroupEgress",
-      "ec2:AuthorizeSecurityGroupIngress",
-      "ec2:CreateInternetGateway",
-      "ec2:CreateNatGateway",
-      "ec2:CreateRoute",
-      "ec2:CreateRouteTable",
-      "ec2:CreateSecurityGroup",
-      "ec2:CreateSubnet",
-      "ec2:CreateTags",
-      "ec2:CreateVpc",
-      "ec2:DeleteInternetGateway",
-      "ec2:DeleteNatGateway",
-      "ec2:DeleteRoute",
-      "ec2:DeleteRouteTable",
-      "ec2:DeleteSecurityGroup",
-      "ec2:DeleteSubnet",
-      "ec2:DeleteTags",
-      "ec2:DeleteVpc",
-      "ec2:DetachInternetGateway",
-      "ec2:DisassociateAddress",
-      "ec2:DisassociateRouteTable",
-      "ec2:ModifySecurityGroupRules",
-      "ec2:ModifySubnetAttribute",
-      "ec2:ModifyVpcAttribute",
-      "ec2:ReleaseAddress",
-      "ec2:ReplaceRoute",
-      "ec2:ReplaceRouteTableAssociation",
-      "ec2:RevokeSecurityGroupEgress",
-      "ec2:RevokeSecurityGroupIngress",
-      "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
-      "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
-    ]
-    resources = ["*"]
-
-    condition {
-      test     = "StringEquals"
-      variable = "aws:RequestedRegion"
-      values   = [var.aws_region]
-    }
-  }
 }
 
 resource "aws_iam_policy" "terraform_apply" {
@@ -624,4 +626,19 @@ resource "aws_iam_policy" "terraform_apply" {
 resource "aws_iam_role_policy_attachment" "terraform_apply" {
   role       = aws_iam_role.terraform_apply.name
   policy_arn = aws_iam_policy.terraform_apply.arn
+}
+
+resource "aws_iam_policy" "terraform_apply_ebs" {
+  name        = "${local.apply_role_name}-ebs-permissions"
+  description = "Permissions for Terraform dev EBS volume management."
+  policy      = data.aws_iam_policy_document.terraform_apply_ebs_permissions.json
+
+  tags = merge(local.common_tags, {
+    Name = "${local.apply_role_name}-ebs-permissions"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "terraform_apply_ebs" {
+  role       = aws_iam_role.terraform_apply.name
+  policy_arn = aws_iam_policy.terraform_apply_ebs.arn
 }

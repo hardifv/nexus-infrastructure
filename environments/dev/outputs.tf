@@ -105,3 +105,18 @@ output "nexus_data_volume_availability_zone" {
   description = "Availability Zone of the persistent Nexus EBS volume."
   value       = module.ebs_volume.availability_zone
 }
+
+output "nexus_instance_role_arn" {
+  description = "ARN of the Nexus EC2 runtime IAM role."
+  value       = module.ec2_instance_role.role_arn
+}
+
+output "nexus_instance_id" {
+  description = "ID of the initial Nexus EC2 instance."
+  value       = module.ec2_compute.instance_id
+}
+
+output "nexus_private_ip" {
+  description = "Private IP address of the initial Nexus EC2 instance."
+  value       = module.ec2_compute.private_ip
+}

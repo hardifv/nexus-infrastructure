@@ -466,7 +466,10 @@ data "aws_iam_policy_document" "terraform_apply_permissions" {
       "rds:DeleteDBInstance",
       "rds:ModifyDBInstance",
     ]
-    resources = [local.rds_db_instance_arn_pattern]
+    resources = [
+      local.rds_db_instance_arn_pattern,
+      local.rds_subnet_group_arn_pattern,
+    ]
 
     condition {
       test     = "StringEquals"

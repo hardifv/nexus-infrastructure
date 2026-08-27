@@ -67,6 +67,7 @@ resource "aws_instance" "this" {
   # checkov:skip=CKV_AWS_135:The EC2 instance inherits ebs_optimized = true from the Launch Template.
   # checkov:skip=CKV_AWS_8:The EC2 root volume inherits encryption from the Launch Template block device configuration.
   # checkov:skip=CKV_AWS_126:Detailed monitoring is intentionally disabled by default for the dev cost baseline and remains configurable for later environments and the monitoring checkpoint.
+  # checkov:skip=CKV2_AWS_41:The EC2 instance inherits its IAM instance profile from aws_launch_template.this.
   subnet_id                   = var.subnet_id
   associate_public_ip_address = false
 

@@ -17,6 +17,20 @@ locals {
   rds_subnet_group_arn_pattern = "arn:*:rds:${var.aws_region}:*:subgrp:${var.managed_project_name}-${var.environment_name}-rds-subnets"
   ebs_volume_arn_pattern       = "arn:*:ec2:${var.aws_region}:*:volume/*"
 
+  nexus_runtime_name                  = "${var.managed_project_name}-${var.environment_name}-nexus-ec2"
+  nexus_secret_policy_name            = "${var.managed_project_name}-${var.environment_name}-nexus-secret-access"
+  nexus_launch_template_name          = "${var.managed_project_name}-${var.environment_name}-nexus"
+  nexus_runtime_role_arn_pattern      = "arn:*:iam::*:role/${local.nexus_runtime_name}"
+  nexus_instance_profile_arn_pattern  = "arn:*:iam::*:instance-profile/${local.nexus_runtime_name}"
+  nexus_secret_policy_arn_pattern     = "arn:*:iam::*:policy/${local.nexus_secret_policy_name}"
+  nexus_launch_template_arn_pattern   = "arn:*:ec2:${var.aws_region}:*:launch-template/*"
+  nexus_instance_arn_pattern          = "arn:*:ec2:${var.aws_region}:*:instance/*"
+  nexus_network_interface_arn_pattern = "arn:*:ec2:${var.aws_region}:*:network-interface/*"
+  nexus_root_volume_arn_pattern       = "arn:*:ec2:${var.aws_region}:*:volume/*"
+  nexus_private_subnet_arn_pattern    = "arn:*:ec2:${var.aws_region}:*:subnet/*"
+  nexus_security_group_arn_pattern    = "arn:*:ec2:${var.aws_region}:*:security-group/*"
+  nexus_approved_ami_arn              = "arn:*:ec2:${var.aws_region}::image/ami-0c02fb55956c7d316"
+
   common_tags = merge(var.tags, {
     Project   = var.project_name
     ManagedBy = "Terraform"
@@ -613,6 +627,456 @@ data "aws_iam_policy_document" "terraform_apply_ebs_permissions" {
   }
 }
 
+data "aws_iam_policy_document" "terraform_apply_runtime_iam_permissions" {
+  statement {
+    sid       = "CreateTaggedNexusRuntimeRole"
+    effect    = "Allow"
+    actions   = ["iam:CreateRole"]
+    resources = [local.nexus_runtime_role_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid    = "ReadNexusRuntimeRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+      "iam:ListRolePolicies",
+    ]
+    resources = [local.nexus_runtime_role_arn_pattern]
+  }
+
+  statement {
+    sid    = "ManageTaggedNexusRuntimeRole"
+    effect = "Allow"
+    actions = [
+      "iam:DeleteRole",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:UpdateRole",
+    ]
+    resources = [local.nexus_runtime_role_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:ResourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:ResourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:ResourceTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid       = "CreateTaggedNexusInstanceProfile"
+    effect    = "Allow"
+    actions   = ["iam:CreateInstanceProfile"]
+    resources = [local.nexus_instance_profile_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid       = "ReadNexusInstanceProfile"
+    effect    = "Allow"
+    actions   = ["iam:GetInstanceProfile"]
+    resources = [local.nexus_instance_profile_arn_pattern]
+  }
+
+  statement {
+    sid    = "ManageTaggedNexusInstanceProfile"
+    effect = "Allow"
+    actions = [
+      "iam:AddRoleToInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile",
+    ]
+    resources = [local.nexus_instance_profile_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:ResourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:ResourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:ResourceTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid       = "CreateTaggedNexusSecretPolicy"
+    effect    = "Allow"
+    actions   = ["iam:CreatePolicy"]
+    resources = [local.nexus_secret_policy_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid    = "ReadNexusSecretPolicy"
+    effect = "Allow"
+    actions = [
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:ListEntitiesForPolicy",
+      "iam:ListPolicyVersions",
+    ]
+    resources = [local.nexus_secret_policy_arn_pattern]
+  }
+
+  statement {
+    sid    = "ManageTaggedNexusSecretPolicy"
+    effect = "Allow"
+    actions = [
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicy",
+      "iam:DeletePolicyVersion",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
+    ]
+    resources = [local.nexus_secret_policy_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:ResourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:ResourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:ResourceTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid    = "ManageApprovedNexusRoleAttachments"
+    effect = "Allow"
+    actions = [
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+    ]
+    resources = [local.nexus_runtime_role_arn_pattern]
+
+    condition {
+      test     = "ArnLike"
+      variable = "iam:PolicyARN"
+      values = [
+        "arn:*:iam::aws:policy/AmazonSSMManagedInstanceCore",
+        "arn:*:iam::aws:policy/CloudWatchAgentServerPolicy",
+        local.nexus_secret_policy_arn_pattern,
+      ]
+    }
+  }
+
+  statement {
+    sid       = "PassNexusRuntimeRoleToEC2"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = [local.nexus_runtime_role_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "terraform_apply_nexus_compute_permissions" {
+  statement {
+    sid       = "CreateTaggedNexusLaunchTemplate"
+    effect    = "Allow"
+    actions   = ["ec2:CreateLaunchTemplate"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid    = "ManageTaggedNexusLaunchTemplate"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateLaunchTemplateVersion",
+      "ec2:DeleteLaunchTemplate",
+      "ec2:DeleteLaunchTemplateVersions",
+    ]
+    resources = [local.nexus_launch_template_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid       = "ModifyNexusLaunchTemplate"
+    effect    = "Allow"
+    actions   = ["ec2:ModifyLaunchTemplate"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid       = "RunApprovedNexusAMI"
+    effect    = "Allow"
+    actions   = ["ec2:RunInstances"]
+    resources = [local.nexus_approved_ami_arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid     = "RunInTaggedNexusNetwork"
+    effect  = "Allow"
+    actions = ["ec2:RunInstances"]
+    resources = [
+      local.nexus_launch_template_arn_pattern,
+      local.nexus_private_subnet_arn_pattern,
+      local.nexus_security_group_arn_pattern,
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid     = "RunTaggedNexusInstanceAndRootVolume"
+    effect  = "Allow"
+    actions = ["ec2:RunInstances"]
+    resources = [
+      local.nexus_instance_arn_pattern,
+      local.nexus_root_volume_arn_pattern,
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid       = "CreatePrivateNexusNetworkInterface"
+    effect    = "Allow"
+    actions   = ["ec2:RunInstances"]
+    resources = [local.nexus_network_interface_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "ec2:AssociatePublicIpAddress"
+      values   = ["false"]
+    }
+  }
+
+  statement {
+    sid    = "ManageTaggedNexusInstance"
+    effect = "Allow"
+    actions = [
+      "ec2:ModifyInstanceAttribute",
+      "ec2:TerminateInstances",
+    ]
+    resources = [local.nexus_instance_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+}
+
 resource "aws_iam_policy" "terraform_apply" {
   name        = "${local.apply_role_name}-permissions"
   description = "Permissions for Terraform dev network applies."
@@ -641,4 +1105,34 @@ resource "aws_iam_policy" "terraform_apply_ebs" {
 resource "aws_iam_role_policy_attachment" "terraform_apply_ebs" {
   role       = aws_iam_role.terraform_apply.name
   policy_arn = aws_iam_policy.terraform_apply_ebs.arn
+}
+
+resource "aws_iam_policy" "terraform_apply_runtime_iam" {
+  name        = "${local.apply_role_name}-runtime-iam-permissions"
+  description = "Permissions for Terraform Nexus runtime IAM management."
+  policy      = data.aws_iam_policy_document.terraform_apply_runtime_iam_permissions.json
+
+  tags = merge(local.common_tags, {
+    Name = "${local.apply_role_name}-runtime-iam-permissions"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "terraform_apply_runtime_iam" {
+  role       = aws_iam_role.terraform_apply.name
+  policy_arn = aws_iam_policy.terraform_apply_runtime_iam.arn
+}
+
+resource "aws_iam_policy" "terraform_apply_nexus_compute" {
+  name        = "${local.apply_role_name}-nexus-compute-permissions"
+  description = "Permissions for Terraform Nexus EC2 compute management."
+  policy      = data.aws_iam_policy_document.terraform_apply_nexus_compute_permissions.json
+
+  tags = merge(local.common_tags, {
+    Name = "${local.apply_role_name}-nexus-compute-permissions"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "terraform_apply_nexus_compute" {
+  role       = aws_iam_role.terraform_apply.name
+  policy_arn = aws_iam_policy.terraform_apply_nexus_compute.arn
 }

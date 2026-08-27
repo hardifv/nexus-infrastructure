@@ -77,3 +77,32 @@ module "ebs_volume" {
     CostCenter = "Learning"
   }
 }
+
+module "ec2_instance_role" {
+  source = "../../modules/ec2-instance-role"
+
+  project_name           = var.project_name
+  environment            = var.environment
+  master_user_secret_arn = module.rds_postgresql.master_user_secret_arn
+
+  tags = {
+    Owner      = "OperationOffer"
+    CostCenter = "Learning"
+  }
+}
+
+module "ec2_compute" {
+  source = "../../modules/nexus-compute"
+
+  project_name          = var.project_name
+  environment           = var.environment
+  ami_id                = "ami-0c02fb55956c7d316"
+  subnet_id             = module.network.private_subnet_ids[module.ebs_volume.availability_zone]
+  security_group_ids    = [module.security_groups.nexus_security_group_id]
+  instance_profile_name = module.ec2_instance_role.instance_profile_name
+
+  tags = {
+    Owner      = "OperationOffer"
+    CostCenter = "Learning"
+  }
+}

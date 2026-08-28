@@ -23,7 +23,7 @@ variable "master_user_secret_arn" {
   type        = string
 
   validation {
-    condition     = can(regex("^arn:(?:aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$", var.master_user_secret_arn))
+    condition     = can(regex("^arn:(?:aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@!-]+$", var.master_user_secret_arn))
     error_message = "master_user_secret_arn must be a plausible AWS Secrets Manager secret ARN."
   }
 }

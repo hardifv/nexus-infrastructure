@@ -106,3 +106,18 @@ module "ec2_compute" {
     CostCenter = "Learning"
   }
 }
+
+module "nexus_delivery" {
+  source = "../../modules/nexus-delivery"
+
+  project_name     = var.project_name
+  environment      = var.environment
+  instance_id      = module.ec2_compute.instance_id
+  volume_id        = module.ebs_volume.volume_id
+  target_group_arn = module.load_balancer.target_group_arn
+
+  tags = {
+    Owner      = "OperationOffer"
+    CostCenter = "Learning"
+  }
+}

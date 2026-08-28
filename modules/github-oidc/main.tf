@@ -209,6 +209,35 @@ data "aws_iam_policy_document" "terraform_plan_permissions" {
       values   = [var.aws_region]
     }
   }
+
+  statement {
+    sid    = "ReadNexusRuntimeRole"
+    effect = "Allow"
+    actions = [
+      "iam:GetRole",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+    ]
+    resources = [local.nexus_runtime_role_arn_pattern]
+  }
+
+  statement {
+    sid       = "ReadNexusInstanceProfile"
+    effect    = "Allow"
+    actions   = ["iam:GetInstanceProfile"]
+    resources = [local.nexus_instance_profile_arn_pattern]
+  }
+
+  statement {
+    sid    = "ReadNexusSecretPolicy"
+    effect = "Allow"
+    actions = [
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:ListPolicyVersions",
+    ]
+    resources = [local.nexus_secret_policy_arn_pattern]
+  }
 }
 
 resource "aws_iam_policy" "terraform_plan" {

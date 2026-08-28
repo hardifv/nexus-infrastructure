@@ -13,9 +13,11 @@ locals {
   target_group_arn_pattern  = "arn:*:elasticloadbalancing:${var.aws_region}:*:targetgroup/${local.load_balancer_name_prefix}-nexus-tg/*"
   http_listener_arn_pattern = "arn:*:elasticloadbalancing:${var.aws_region}:*:listener/app/${local.load_balancer_name_prefix}-alb/*/*"
 
-  rds_db_instance_arn_pattern  = "arn:*:rds:${var.aws_region}:*:db:${var.managed_project_name}-${var.environment_name}-postgresql"
-  rds_subnet_group_arn_pattern = "arn:*:rds:${var.aws_region}:*:subgrp:${var.managed_project_name}-${var.environment_name}-rds-subnets"
-  ebs_volume_arn_pattern       = "arn:*:ec2:${var.aws_region}:*:volume/*"
+  rds_db_instance_arn_pattern    = "arn:*:rds:${var.aws_region}:*:db:${var.managed_project_name}-${var.environment_name}-postgresql"
+  rds_subnet_group_arn_pattern   = "arn:*:rds:${var.aws_region}:*:subgrp:${var.managed_project_name}-${var.environment_name}-rds-subnets"
+  rds_kms_key_arn_pattern        = "arn:*:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:key/*"
+  rds_managed_secret_arn_pattern = "arn:*:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:rds!db-*"
+  ebs_volume_arn_pattern         = "arn:*:ec2:${var.aws_region}:*:volume/*"
 
   nexus_runtime_name                  = "${var.managed_project_name}-${var.environment_name}-nexus-ec2"
   nexus_secret_policy_name            = "${var.managed_project_name}-${var.environment_name}-nexus-secret-access"
@@ -36,6 +38,8 @@ locals {
     ManagedBy = "Terraform"
   })
 }
+
+data "aws_caller_identity" "current" {}
 
 data "aws_iam_openid_connect_provider" "github" {
   url = local.oidc_url
@@ -661,6 +665,62 @@ data "aws_iam_policy_document" "terraform_apply_ebs_permissions" {
   }
 }
 
+data "aws_iam_policy_document" "terraform_apply_rds_encryption_support_permissions" {
+  statement {
+    sid       = "DescribeRDSManagedKMSKeys"
+    effect    = "Allow"
+    actions   = ["kms:DescribeKey"]
+    resources = [local.rds_kms_key_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid       = "CreateRDSManagedKMSGrant"
+    effect    = "Allow"
+    actions   = ["kms:CreateGrant"]
+    resources = [local.rds_kms_key_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["rds.${var.aws_region}.amazonaws.com"]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "kms:GrantIsForAWSResource"
+      values   = ["true"]
+    }
+  }
+
+  statement {
+    sid    = "CreateTaggedRDSManagedSecret"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:CreateSecret",
+      "secretsmanager:TagResource",
+    ]
+    resources = [local.rds_managed_secret_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+}
+
 data "aws_iam_policy_document" "terraform_apply_runtime_iam_permissions" {
   statement {
     sid       = "CreateTaggedNexusRuntimeRole"
@@ -1169,4 +1229,19 @@ resource "aws_iam_policy" "terraform_apply_nexus_compute" {
 resource "aws_iam_role_policy_attachment" "terraform_apply_nexus_compute" {
   role       = aws_iam_role.terraform_apply.name
   policy_arn = aws_iam_policy.terraform_apply_nexus_compute.arn
+}
+
+resource "aws_iam_policy" "terraform_apply_rds_encryption_support" {
+  name        = "${local.apply_role_name}-rds-encryption-support-permissions"
+  description = "Permissions supporting encrypted RDS creation and its managed master secret."
+  policy      = data.aws_iam_policy_document.terraform_apply_rds_encryption_support_permissions.json
+
+  tags = merge(local.common_tags, {
+    Name = "${local.apply_role_name}-rds-encryption-support-permissions"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "terraform_apply_rds_encryption_support" {
+  role       = aws_iam_role.terraform_apply.name
+  policy_arn = aws_iam_policy.terraform_apply_rds_encryption_support.arn
 }

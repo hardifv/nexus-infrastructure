@@ -214,9 +214,11 @@ data "aws_iam_policy_document" "terraform_plan_permissions" {
     sid    = "ReadNexusRuntimeRole"
     effect = "Allow"
     actions = [
+      "iam:GetRolePolicy",
       "iam:GetRole",
       "iam:ListAttachedRolePolicies",
       "iam:ListInstanceProfilesForRole",
+      "iam:ListRolePolicies",
     ]
     resources = [local.nexus_runtime_role_arn_pattern]
   }

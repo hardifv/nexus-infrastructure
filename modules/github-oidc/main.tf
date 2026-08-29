@@ -32,6 +32,8 @@ locals {
   nexus_private_subnet_arn_pattern    = "arn:*:ec2:${var.aws_region}:*:subnet/*"
   nexus_security_group_arn_pattern    = "arn:*:ec2:${var.aws_region}:*:security-group/*"
   nexus_approved_ami_arn              = "arn:*:ec2:${var.aws_region}::image/ami-0c02fb55956c7d316"
+  nexus_delivery_document_name        = "${var.managed_project_name}-${var.environment_name}-nexus-deploy"
+  nexus_delivery_document_arn_pattern = "arn:*:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/${local.nexus_delivery_document_name}"
 
   common_tags = merge(var.tags, {
     Project   = var.project_name
@@ -1171,6 +1173,244 @@ data "aws_iam_policy_document" "terraform_apply_nexus_compute_permissions" {
   }
 }
 
+data "aws_iam_policy_document" "terraform_plan_nexus_delivery_permissions" {
+  statement {
+    sid    = "ReadNexusDeliveryDocument"
+    effect = "Allow"
+    actions = [
+      "ssm:DescribeDocument",
+      "ssm:GetDocument",
+      "ssm:ListDocumentVersions",
+      "ssm:ListTagsForResource",
+    ]
+    resources = [local.nexus_delivery_document_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid       = "ReadNexusTargetHealth"
+    effect    = "Allow"
+    actions   = ["elasticloadbalancing:DescribeTargetHealth"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "terraform_apply_nexus_delivery_infrastructure_permissions" {
+  statement {
+    sid    = "ManageNexusVolumeAttachment"
+    effect = "Allow"
+    actions = [
+      "ec2:AttachVolume",
+      "ec2:DetachVolume",
+    ]
+    resources = [
+      local.ebs_volume_arn_pattern,
+      local.nexus_instance_arn_pattern,
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid    = "ManageNexusTargetRegistration"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:DeregisterTargets",
+      "elasticloadbalancing:RegisterTargets",
+    ]
+    resources = [local.target_group_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "elasticloadbalancing:ResourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "elasticloadbalancing:ResourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "elasticloadbalancing:ResourceTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid    = "CreateTaggedNexusDeliveryDocument"
+    effect = "Allow"
+    actions = [
+      "ssm:AddTagsToResource",
+      "ssm:CreateDocument",
+    ]
+    resources = [local.nexus_delivery_document_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid    = "ManageNexusDeliveryDocument"
+    effect = "Allow"
+    actions = [
+      "ssm:AddTagsToResource",
+      "ssm:DeleteDocument",
+      "ssm:DescribeDocument",
+      "ssm:GetDocument",
+      "ssm:ListDocumentVersions",
+      "ssm:ListTagsForResource",
+      "ssm:RemoveTagsFromResource",
+      "ssm:UpdateDocument",
+      "ssm:UpdateDocumentDefaultVersion",
+    ]
+    resources = [local.nexus_delivery_document_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "terraform_apply_nexus_deployment_permissions" {
+  statement {
+    sid       = "RunNexusDeliveryDocument"
+    effect    = "Allow"
+    actions   = ["ssm:SendCommand"]
+    resources = [local.nexus_delivery_document_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid       = "RunCommandOnTaggedNexusInstance"
+    effect    = "Allow"
+    actions   = ["ssm:SendCommand"]
+    resources = [local.nexus_instance_arn_pattern]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/Project"
+      values   = [var.managed_project_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/Environment"
+      values   = [var.environment_name]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/ManagedBy"
+      values   = ["Terraform"]
+    }
+  }
+
+  statement {
+    sid    = "ReadNexusDeploymentCommandStatus"
+    effect = "Allow"
+    actions = [
+      "ssm:GetCommandInvocation",
+      "ssm:ListCommandInvocations",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid       = "ReadNexusDeploymentTargetHealth"
+    effect    = "Allow"
+    actions   = ["elasticloadbalancing:DescribeTargetHealth"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+}
+
 resource "aws_iam_policy" "terraform_apply" {
   name        = "${local.apply_role_name}-permissions"
   description = "Permissions for Terraform dev network applies."
@@ -1244,4 +1484,49 @@ resource "aws_iam_policy" "terraform_apply_rds_encryption_support" {
 resource "aws_iam_role_policy_attachment" "terraform_apply_rds_encryption_support" {
   role       = aws_iam_role.terraform_apply.name
   policy_arn = aws_iam_policy.terraform_apply_rds_encryption_support.arn
+}
+
+resource "aws_iam_policy" "terraform_plan_nexus_delivery" {
+  name        = "${local.plan_role_name}-nexus-delivery-permissions"
+  description = "Read permissions for Terraform Nexus delivery plans."
+  policy      = data.aws_iam_policy_document.terraform_plan_nexus_delivery_permissions.json
+
+  tags = merge(local.common_tags, {
+    Name = "${local.plan_role_name}-nexus-delivery-permissions"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "terraform_plan_nexus_delivery" {
+  role       = aws_iam_role.terraform_plan.name
+  policy_arn = aws_iam_policy.terraform_plan_nexus_delivery.arn
+}
+
+resource "aws_iam_policy" "terraform_apply_nexus_delivery_infrastructure" {
+  name        = "${local.apply_role_name}-nexus-delivery-infrastructure-permissions"
+  description = "Permissions for Terraform Nexus delivery infrastructure management."
+  policy      = data.aws_iam_policy_document.terraform_apply_nexus_delivery_infrastructure_permissions.json
+
+  tags = merge(local.common_tags, {
+    Name = "${local.apply_role_name}-nexus-delivery-infrastructure-permissions"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "terraform_apply_nexus_delivery_infrastructure" {
+  role       = aws_iam_role.terraform_apply.name
+  policy_arn = aws_iam_policy.terraform_apply_nexus_delivery_infrastructure.arn
+}
+
+resource "aws_iam_policy" "terraform_apply_nexus_deployment" {
+  name        = "${local.apply_role_name}-nexus-deployment-permissions"
+  description = "Permissions for the dev Nexus deployment workflow."
+  policy      = data.aws_iam_policy_document.terraform_apply_nexus_deployment_permissions.json
+
+  tags = merge(local.common_tags, {
+    Name = "${local.apply_role_name}-nexus-deployment-permissions"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "terraform_apply_nexus_deployment" {
+  role       = aws_iam_role.terraform_apply.name
+  policy_arn = aws_iam_policy.terraform_apply_nexus_deployment.arn
 }

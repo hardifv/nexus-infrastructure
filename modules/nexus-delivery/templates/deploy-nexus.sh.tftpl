@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+trap 'echo "Nexus deployment failed at line ${LINENO}." >&2' ERR
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "This deployment must run as root." >&2
+  exit 1
+fi
+
+if [[ "$#" -ne 7 ]]; then
+  echo "Expected seven deployment parameters." >&2
+  exit 1
+fi
+
+nexus_image="$1"
+rds_endpoint="$2"
+rds_database="$3"
+rds_secret_arn="$4"
+ebs_volume_id="$5"
+mount_path="$6"
+nexus_port="$7"
+
+if [[ ! "${nexus_image}" =~ ^sonatype/nexus3:[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "${nexus_image}" == *:latest ]]; then
+  echo "Nexus image must use an explicit semantic version tag." >&2
+  exit 1
+fi
+
+if [[ ! "${ebs_volume_id}" =~ ^vol-[0-9a-f]{8,17}$ ]] || [[ "${mount_path}" != "/nexus-data" ]] ||
+  [[ ! "${nexus_port}" =~ ^[0-9]+$ ]] || (( nexus_port < 1 || nexus_port > 65535 )); then
+  echo "One or more deployment parameters are invalid." >&2
+  exit 1
+fi
+
+if [[ "${rds_endpoint}" != *:* ]]; then
+  echo "RDS endpoint must include its port." >&2
+  exit 1
+fi
+
+rds_host="${rds_endpoint%:*}"
+rds_port="${rds_endpoint##*:}"
+if [[ -z "${rds_host}" ]] || [[ ! "${rds_port}" =~ ^[0-9]+$ ]]; then
+  echo "RDS endpoint is invalid." >&2
+  exit 1
+fi
+
+install_runtime_packages() {
+  if command -v amazon-linux-extras >/dev/null 2>&1; then
+    amazon-linux-extras install -y docker
+    if amazon-linux-extras list 2>/dev/null | grep -q 'postgresql14'; then
+      amazon-linux-extras enable postgresql14
+      yum clean metadata
+    fi
+  fi
+  yum install -y docker jq nvme-cli postgresql
+  systemctl enable --now docker
+
+  if ! psql --version | grep -Eq ' (1[0-9]|[2-9][0-9])\.'; then
+    echo "PostgreSQL client 10 or newer is required for RDS authentication." >&2
+    exit 1
+  fi
+}
+
+resolve_ebs_device() {
+  local compact_volume_id="${ebs_volume_id//-/}"
+  local candidate=""
+  local serial=""
+  local attempt=0
+
+  while (( attempt < 60 )); do
+    for candidate in \
+      "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${compact_volume_id}" \
+      "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${ebs_volume_id}"; do
+      if [[ -e "${candidate}" ]]; then
+        readlink -f "${candidate}"
+        return 0
+      fi
+    done
+
+    while read -r candidate serial; do
+      serial="${serial//-/}"
+      if [[ "${serial}" == "${compact_volume_id}" ]]; then
+        printf '/dev/%s\n' "${candidate}"
+        return 0
+      fi
+    done < <(lsblk -dn -o NAME,SERIAL)
+
+    if [[ -b /dev/xvdf ]]; then
+      printf '/dev/xvdf\n'
+      return 0
+    fi
+
+    sleep 5
+    ((attempt += 1))
+  done
+
+  echo "Timed out waiting for EBS volume ${ebs_volume_id}." >&2
+  return 1
+}
+
+assert_not_root_disk() {
+  local device="$1"
+  local root_source=""
+  local root_parent=""
+  local device_parent=""
+
+  root_source="$(findmnt -n -o SOURCE /)"
+  root_parent="$(lsblk -ndo PKNAME "${root_source}" 2>/dev/null || true)"
+  device_parent="$(lsblk -ndo PKNAME "${device}" 2>/dev/null || true)"
+
+  [[ -n "${root_parent}" ]] || root_parent="$(basename "$(readlink -f "${root_source}")")"
+  [[ -n "${device_parent}" ]] || device_parent="$(basename "$(readlink -f "${device}")")"
+
+  if [[ "$(readlink -f "${device}")" == "$(readlink -f "${root_source}")" ]] || [[ "${device_parent}" == "${root_parent}" ]]; then
+    echo "Refusing to use the root disk as Nexus persistent storage." >&2
+    exit 1
+  fi
+}
+
+prepare_volume() {
+  local device="$1"
+  local filesystem=""
+  local filesystem_uuid=""
+
+  filesystem="$(blkid -s TYPE -o value "${device}" 2>/dev/null || true)"
+  if [[ -z "${filesystem}" ]]; then
+    if [[ -n "$(wipefs -n "${device}" 2>/dev/null)" ]] || [[ "$(lsblk -n -o TYPE "${device}" | wc -l)" -ne 1 ]]; then
+      echo "The EBS volume has an unrecognized signature or partition layout; refusing to format it." >&2
+      exit 1
+    fi
+    mkfs.ext4 -F "${device}"
+    filesystem="ext4"
+  fi
+
+  if [[ "${filesystem}" != "ext4" && "${filesystem}" != "xfs" ]]; then
+    echo "Unsupported existing filesystem: ${filesystem}." >&2
+    exit 1
+  fi
+
+  filesystem_uuid="$(blkid -s UUID -o value "${device}")"
+  [[ -n "${filesystem_uuid}" ]] || { echo "Persistent volume UUID could not be read." >&2; exit 1; }
+
+  mkdir -p "${mount_path}"
+  if findmnt -rn "${mount_path}" >/dev/null; then
+    if [[ "$(findmnt -n -o UUID "${mount_path}")" != "${filesystem_uuid}" ]]; then
+      echo "The Nexus mount path is already backed by a different filesystem." >&2
+      exit 1
+    fi
+  else
+    mount -U "${filesystem_uuid}" "${mount_path}"
+  fi
+
+  sed -i "\\|[[:space:]]${mount_path}[[:space:]]|d" /etc/fstab
+  printf 'UUID=%s %s %s defaults,nofail 0 2\n' "${filesystem_uuid}" "${mount_path}" "${filesystem}" >> /etc/fstab
+}
+
+configure_postgresql() {
+  local secret_json=""
+  local database_user=""
+  local database_password=""
+  local database_owner=""
+  local escaped_user=""
+  local escaped_password=""
+  local store_file="${mount_path}/etc/fabric/nexus-store.properties"
+
+  secret_json="$(aws secretsmanager get-secret-value --secret-id "${rds_secret_arn}" --query SecretString --output text)"
+  database_user="$(jq -er '.username | strings | select(length > 0)' <<<"${secret_json}")"
+  database_password="$(jq -er '.password | strings | select(length > 0)' <<<"${secret_json}")"
+  unset secret_json
+
+  export PGPASSWORD="${database_password}"
+  database_owner="$(psql "host=${rds_host} port=${rds_port} dbname=${rds_database} user=${database_user} sslmode=require" \
+    --no-password --tuples-only --no-align --set=ON_ERROR_STOP=1 \
+    --command='SELECT pg_catalog.pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname = current_database();')"
+  database_owner="${database_owner//$'\n'/}"
+  if [[ "${database_owner}" != "${database_user}" ]]; then
+    unset PGPASSWORD database_password
+    echo "The RDS user must own the Nexus database." >&2
+    exit 1
+  fi
+
+  psql "host=${rds_host} port=${rds_port} dbname=${rds_database} user=${database_user} sslmode=require" \
+    --no-password --set=ON_ERROR_STOP=1 <<'SQL'
+CREATE SCHEMA IF NOT EXISTS nexus AUTHORIZATION CURRENT_USER;
+CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA nexus;
+SQL
+  unset PGPASSWORD
+
+  mkdir -p "$(dirname "${store_file}")"
+  escaped_user="${database_user//\\/\\\\}"
+  escaped_password="${database_password//\\/\\\\}"
+  unset database_password
+
+  {
+    printf 'username=%s\n' "${escaped_user}"
+    printf 'password=%s\n' "${escaped_password}"
+    printf 'jdbcUrl=jdbc\\:postgresql\\://%s\\:%s/%s?currentSchema=nexus&sslmode=require\n' "${rds_host}" "${rds_port}" "${rds_database}"
+  } > "${store_file}"
+  unset escaped_password
+  chmod 0600 "${store_file}"
+}
+
+deploy_nexus() {
+  local desired_image_id=""
+  local current_image_id=""
+  local desired_config_sha=""
+  local current_config_sha=""
+  local nexus_jvm_options="-Xms1024m -Xmx1024m -XX:MaxDirectMemorySize=1024m -Djava.util.prefs.userRoot=/nexus-data/javaprefs"
+  local container_running="false"
+  local attempt=0
+
+  chown -R 200:200 "${mount_path}"
+  docker pull "${nexus_image}" >/dev/null
+  desired_image_id="$(docker image inspect --format '{{.Id}}' "${nexus_image}")"
+  desired_config_sha="$(
+    {
+      sha256sum "${mount_path}/etc/fabric/nexus-store.properties"
+      printf '%s' "${nexus_jvm_options}"
+    } | sha256sum | awk '{print $1}'
+  )"
+
+  if docker container inspect nexus >/dev/null 2>&1; then
+    current_image_id="$(docker container inspect --format '{{.Image}}' nexus)"
+    current_config_sha="$(docker container inspect --format '{{index .Config.Labels "com.nexus-platform.runtime-config-sha256"}}' nexus 2>/dev/null || true)"
+    container_running="$(docker container inspect --format '{{.State.Running}}' nexus)"
+  fi
+
+  if [[ "${current_image_id}" != "${desired_image_id}" ]] || [[ "${current_config_sha}" != "${desired_config_sha}" ]]; then
+    if docker container inspect nexus >/dev/null 2>&1; then
+      docker stop --time 120 nexus >/dev/null || true
+      docker rm nexus >/dev/null
+    fi
+
+    docker run -d \
+      --name nexus \
+      --restart unless-stopped \
+      --env "INSTALL4J_ADD_VM_PARAMS=${nexus_jvm_options}" \
+      --label "com.nexus-platform.runtime-config-sha256=${desired_config_sha}" \
+      --publish "${nexus_port}:8081" \
+      --volume "${mount_path}:/nexus-data" \
+      "${nexus_image}" >/dev/null
+  elif [[ "${container_running}" != "true" ]]; then
+    docker start nexus >/dev/null
+  fi
+
+  while (( attempt < 90 )); do
+    if curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${nexus_port}/service/rest/v1/status" >/dev/null; then
+      echo "Nexus deployment healthy."
+      echo "NEXUS_IMAGE_ID=${desired_image_id}"
+      if [[ "${nexus_image}" == "sonatype/nexus3:3.83.2" ]]; then
+        echo "WARNING: Do not execute Nexus Verify/Repair tasks on version 3.83.2 because of the reviewed Sonatype data-loss issue."
+      fi
+      return 0
+    fi
+    sleep 10
+    ((attempt += 1))
+  done
+
+  echo "Nexus did not become healthy before the timeout." >&2
+  return 1
+}
+
+install_runtime_packages
+ebs_device="$(resolve_ebs_device)"
+assert_not_root_disk "${ebs_device}"
+prepare_volume "${ebs_device}"
+configure_postgresql
+deploy_nexus

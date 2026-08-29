@@ -120,3 +120,8 @@ output "nexus_private_ip" {
   description = "Private IP address of the initial Nexus EC2 instance."
   value       = module.ec2_compute.private_ip
 }
+
+output "nexus_delivery_ssm_document_name" {
+  description = "Name of the SSM document used by the Nexus deployment workflow."
+  value       = module.nexus_delivery.ssm_document_name
+}

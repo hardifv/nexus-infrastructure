@@ -1179,6 +1179,7 @@ data "aws_iam_policy_document" "terraform_plan_nexus_delivery_permissions" {
     effect = "Allow"
     actions = [
       "ssm:DescribeDocument",
+      "ssm:DescribeDocumentPermission",
       "ssm:GetDocument",
       "ssm:ListDocumentVersions",
       "ssm:ListTagsForResource",
@@ -1319,6 +1320,7 @@ data "aws_iam_policy_document" "terraform_apply_nexus_delivery_infrastructure_pe
       "ssm:AddTagsToResource",
       "ssm:DeleteDocument",
       "ssm:DescribeDocument",
+      "ssm:DescribeDocumentPermission",
       "ssm:GetDocument",
       "ssm:ListDocumentVersions",
       "ssm:ListTagsForResource",

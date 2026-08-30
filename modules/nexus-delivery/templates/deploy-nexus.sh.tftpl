@@ -2,25 +2,38 @@
 set -Eeuo pipefail
 umask 077
 
-trap 'echo "Nexus deployment failed at line ${LINENO}." >&2' ERR
+deployment_error() {
+  local exit_code="$?"
+  trap - ERR
+  echo "Nexus deployment failed at line ${BASH_LINENO[0]}." >&2
+  exit "${exit_code}"
+}
+
+trap deployment_error ERR
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "This deployment must run as root." >&2
   exit 1
 fi
 
-if [[ "$#" -ne 7 ]]; then
-  echo "Expected seven deployment parameters." >&2
+if [[ "$#" -ne 8 ]]; then
+  echo "Expected eight deployment parameters." >&2
   exit 1
 fi
 
-nexus_image="$1"
-rds_endpoint="$2"
-rds_database="$3"
-rds_secret_arn="$4"
-ebs_volume_id="$5"
-mount_path="$6"
-nexus_port="$7"
+AWS_REGION="$1"
+nexus_image="$2"
+rds_endpoint="$3"
+rds_database="$4"
+rds_secret_arn="$5"
+ebs_volume_id="$6"
+mount_path="$7"
+nexus_port="$8"
+
+if [[ ! "${AWS_REGION}" =~ ^[a-z]{2}(-[a-z0-9]+)+-[0-9]+$ ]]; then
+  echo "AWS Region parameter is invalid." >&2
+  exit 1
+fi
 
 if [[ ! "${nexus_image}" =~ ^sonatype/nexus3:[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "${nexus_image}" == *:latest ]]; then
   echo "Nexus image must use an explicit semantic version tag." >&2
@@ -163,16 +176,38 @@ configure_postgresql() {
   local escaped_user=""
   local escaped_password=""
   local store_file="${mount_path}/etc/fabric/nexus-store.properties"
+  local command_error_file="/var/tmp/nexus-database-command-error.log"
 
-  secret_json="$(aws secretsmanager get-secret-value --secret-id "${rds_secret_arn}" --query SecretString --output text)"
-  database_user="$(jq -er '.username | strings | select(length > 0)' <<<"${secret_json}")"
-  database_password="$(jq -er '.password | strings | select(length > 0)' <<<"${secret_json}")"
+  if ! secret_json="$(aws secretsmanager get-secret-value \
+    --region "${AWS_REGION}" \
+    --secret-id "${rds_secret_arn}" \
+    --query SecretString \
+    --output text 2>"${command_error_file}")"; then
+    rm -f "${command_error_file}"
+    echo "Secrets Manager retrieval failed in the requested AWS Region." >&2
+    return 1
+  fi
+  rm -f "${command_error_file}"
+
+  if ! database_user="$(jq -er '.username | strings | select(length > 0)' <<<"${secret_json}")" ||
+    ! database_password="$(jq -er '.password | strings | select(length > 0)' <<<"${secret_json}")"; then
+    unset secret_json database_user database_password
+    echo "The managed database secret has an invalid structure." >&2
+    return 1
+  fi
   unset secret_json
 
   export PGPASSWORD="${database_password}"
-  database_owner="$(psql "host=${rds_host} port=${rds_port} dbname=${rds_database} user=${database_user} sslmode=require" \
+  if ! database_owner="$(psql "host=${rds_host} port=${rds_port} dbname=${rds_database} user=${database_user} sslmode=require" \
     --no-password --tuples-only --no-align --set=ON_ERROR_STOP=1 \
-    --command='SELECT pg_catalog.pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname = current_database();')"
+    --command='SELECT pg_catalog.pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname = current_database();' \
+    2>"${command_error_file}")"; then
+    rm -f "${command_error_file}"
+    unset PGPASSWORD database_password database_user
+    echo "Database ownership verification failed." >&2
+    return 1
+  fi
+  rm -f "${command_error_file}"
   database_owner="${database_owner//$'\n'/}"
   if [[ "${database_owner}" != "${database_user}" ]]; then
     unset PGPASSWORD database_password
@@ -180,11 +215,18 @@ configure_postgresql() {
     exit 1
   fi
 
-  psql "host=${rds_host} port=${rds_port} dbname=${rds_database} user=${database_user} sslmode=require" \
-    --no-password --set=ON_ERROR_STOP=1 <<'SQL'
+  if ! psql "host=${rds_host} port=${rds_port} dbname=${rds_database} user=${database_user} sslmode=require" \
+    --no-password --set=ON_ERROR_STOP=1 2>"${command_error_file}" <<'SQL'
 CREATE SCHEMA IF NOT EXISTS nexus AUTHORIZATION CURRENT_USER;
 CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA nexus;
 SQL
+  then
+    rm -f "${command_error_file}"
+    unset PGPASSWORD database_password database_user
+    echo "Database schema configuration failed." >&2
+    return 1
+  fi
+  rm -f "${command_error_file}"
   unset PGPASSWORD
 
   mkdir -p "$(dirname "${store_file}")"
@@ -261,9 +303,32 @@ deploy_nexus() {
   return 1
 }
 
+verify_deployment() {
+  local container_status=""
+
+  if ! docker image inspect "${nexus_image}" >/dev/null 2>&1; then
+    echo "Requested Nexus Docker image is not available locally after deployment." >&2
+    return 1
+  fi
+
+  if ! docker container inspect nexus >/dev/null 2>&1; then
+    echo "Nexus container does not exist after deployment." >&2
+    return 1
+  fi
+
+  container_status="$(docker container inspect --format '{{.State.Status}}' nexus 2>/dev/null || true)"
+  if [[ "${container_status}" != "running" ]]; then
+    echo "Nexus container is not running after deployment." >&2
+    return 1
+  fi
+
+  echo "Nexus Docker runtime verification passed."
+}
+
 install_runtime_packages
 ebs_device="$(resolve_ebs_device)"
 assert_not_root_disk "${ebs_device}"
 prepare_volume "${ebs_device}"
 configure_postgresql
 deploy_nexus
+verify_deployment

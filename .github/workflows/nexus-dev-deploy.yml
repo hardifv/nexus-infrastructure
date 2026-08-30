@@ -72,14 +72,16 @@ jobs:
         id: infrastructure
         run: |
           set -Eeuo pipefail
-          echo "instance_id=$(terraform output -raw nexus_instance_id)" >> "${GITHUB_OUTPUT}"
-          echo "volume_id=$(terraform output -raw nexus_data_volume_id)" >> "${GITHUB_OUTPUT}"
-          echo "target_group_arn=$(terraform output -raw target_group_arn)" >> "${GITHUB_OUTPUT}"
-          echo "alb_dns_name=$(terraform output -raw load_balancer_dns_name)" >> "${GITHUB_OUTPUT}"
-          echo "rds_endpoint=$(terraform output -raw rds_endpoint)" >> "${GITHUB_OUTPUT}"
-          echo "rds_database_name=$(terraform output -raw rds_database_name)" >> "${GITHUB_OUTPUT}"
-          echo "rds_secret_arn=$(terraform output -raw rds_master_user_secret_arn)" >> "${GITHUB_OUTPUT}"
-          echo "ssm_document_name=$(terraform output -raw nexus_delivery_ssm_document_name)" >> "${GITHUB_OUTPUT}"
+          {
+            echo "instance_id=$(terraform output -raw nexus_instance_id)"
+            echo "volume_id=$(terraform output -raw nexus_data_volume_id)"
+            echo "target_group_arn=$(terraform output -raw target_group_arn)"
+            echo "alb_dns_name=$(terraform output -raw load_balancer_dns_name)"
+            echo "rds_endpoint=$(terraform output -raw rds_endpoint)"
+            echo "rds_database_name=$(terraform output -raw rds_database_name)"
+            echo "rds_secret_arn=$(terraform output -raw rds_master_user_secret_arn)"
+            echo "ssm_document_name=$(terraform output -raw nexus_delivery_ssm_document_name)"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Run Nexus deployment document
         id: deployment
@@ -93,14 +95,22 @@ jobs:
           NEXUS_VERSION: ${{ inputs.nexus_version }}
         run: |
           set -Eeuo pipefail
+          if [[ ! "${AWS_REGION}" =~ ^[a-z]{2}(-[a-z0-9]+)+-[0-9]+$ ]]; then
+            echo "::error::Configured AWS Region is invalid."
+            exit 1
+          fi
+          echo "::add-mask::${RDS_SECRET_ARN}"
+
           parameters_file="${RUNNER_TEMP}/nexus-parameters.json"
           jq -n \
+            --arg aws_region "${AWS_REGION}" \
             --arg image "sonatype/nexus3:${NEXUS_VERSION}" \
             --arg endpoint "${RDS_ENDPOINT}" \
             --arg database "${RDS_DATABASE_NAME}" \
             --arg secret_arn "${RDS_SECRET_ARN}" \
             --arg volume_id "${VOLUME_ID}" \
             '{
+              AWSRegion: [$aws_region],
               NexusImage: [$image],
               RDSEndpoint: [$endpoint],
               RDSDatabaseName: [$database],
@@ -119,6 +129,7 @@ jobs:
             --output text)"
           rm -f "${parameters_file}"
           echo "command_id=${command_id}" >> "${GITHUB_OUTPUT}"
+          echo "SSM command ID: ${command_id}"
 
           for _ in {1..180}; do
             command_status="$(aws ssm get-command-invocation \
@@ -132,7 +143,27 @@ jobs:
                 break
                 ;;
               Cancelled|Cancelling|Failed|TimedOut)
-                echo "::error::SSM deployment finished with status ${command_status}. Review the protected SSM command output in AWS."
+                invocation_json="$(aws ssm get-command-invocation \
+                  --command-id "${command_id}" \
+                  --instance-id "${INSTANCE_ID}" \
+                  --output json 2>/dev/null || true)"
+                sanitized_stdout="$(jq -r '.StandardOutputContent // ""' <<<"${invocation_json}" | \
+                  sed -E \
+                    -e 's#arn:(aws|aws-us-gov|aws-cn):secretsmanager:[^[:space:]]+#[REDACTED_SECRET_ARN]#g' \
+                    -e 's/([Uu]ser(name)?[=: ]+)[^[:space:]]+/\1[REDACTED]/g' \
+                    -e 's/([Pp]assword[=: ]+)[^[:space:]]+/\1[REDACTED]/g')"
+                sanitized_stderr="$(jq -r '.StandardErrorContent // ""' <<<"${invocation_json}" | \
+                  sed -E \
+                    -e 's#arn:(aws|aws-us-gov|aws-cn):secretsmanager:[^[:space:]]+#[REDACTED_SECRET_ARN]#g' \
+                    -e 's/([Uu]ser(name)?[=: ]+)[^[:space:]]+/\1[REDACTED]/g' \
+                    -e 's/([Pp]assword[=: ]+)[^[:space:]]+/\1[REDACTED]/g')"
+                echo "::group::Sanitized SSM stdout"
+                printf '%s\n' "${sanitized_stdout}"
+                echo "::endgroup::"
+                echo "::group::Sanitized SSM stderr"
+                printf '%s\n' "${sanitized_stderr}"
+                echo "::endgroup::"
+                echo "::error::SSM deployment finished with status ${command_status}."
                 exit 1
                 ;;
             esac

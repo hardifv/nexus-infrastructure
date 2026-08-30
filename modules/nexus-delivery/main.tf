@@ -35,6 +35,11 @@ resource "aws_ssm_document" "this" {
     schemaVersion = "2.2"
     description   = "Deploy or upgrade Nexus Repository on the dev EC2 instance without exposing database credentials."
     parameters = {
+      AWSRegion = {
+        type           = "String"
+        description    = "AWS Region used explicitly by runtime AWS CLI operations."
+        allowedPattern = "^[a-z]{2}(?:-[a-z0-9]+)+-[0-9]+$"
+      }
       NexusImage = {
         type           = "String"
         description    = "Pinned Sonatype Nexus image reference; latest is rejected by the deployment script."
@@ -82,8 +87,7 @@ resource "aws_ssm_document" "this" {
             "umask 077",
             "printf '%s' '${local.deployment_script_base64}' | base64 --decode > /var/tmp/deploy-nexus.sh",
             "chmod 0700 /var/tmp/deploy-nexus.sh",
-            "/var/tmp/deploy-nexus.sh '{{ NexusImage }}' '{{ RDSEndpoint }}' '{{ RDSDatabaseName }}' '{{ RDSSecretARN }}' '{{ EBSVolumeID }}' '{{ MountPath }}' '{{ NexusPort }}'",
-            "rm -f /var/tmp/deploy-nexus.sh",
+            "/var/tmp/deploy-nexus.sh '{{ AWSRegion }}' '{{ NexusImage }}' '{{ RDSEndpoint }}' '{{ RDSDatabaseName }}' '{{ RDSSecretARN }}' '{{ EBSVolumeID }}' '{{ MountPath }}' '{{ NexusPort }}'; deployment_status=$?; rm -f /var/tmp/deploy-nexus.sh; exit $deployment_status",
           ]
         }
       }

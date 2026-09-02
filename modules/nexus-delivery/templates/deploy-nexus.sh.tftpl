@@ -206,7 +206,6 @@ configure_postgresql() {
   export PGUSER="${database_user}"
   export PGSSLMODE="require"
   export PGPASSWORD="${database_password}"
-
   for ((ownership_attempt = 1; ownership_attempt <= ownership_max_attempts; ownership_attempt++)); do
     : >"${command_error_file}"
     if ownership_matches="$(psql -X -qAt \

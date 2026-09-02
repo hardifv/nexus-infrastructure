@@ -172,7 +172,10 @@ configure_postgresql() {
   local secret_json=""
   local database_user=""
   local database_password=""
-  local database_owner=""
+  local ownership_matches=""
+  local diagnostic_category=""
+  local ownership_attempt=0
+  local ownership_max_attempts=3
   local escaped_user=""
   local escaped_password=""
   local store_file="${mount_path}/etc/fabric/nexus-store.properties"
@@ -197,22 +200,50 @@ configure_postgresql() {
   fi
   unset secret_json
 
+  export PGHOST="${rds_host}"
+  export PGPORT="${rds_port}"
+  export PGDATABASE="${rds_database}"
+  export PGUSER="${database_user}"
+  export PGSSLMODE="require"
   export PGPASSWORD="${database_password}"
-  if ! database_owner="$(psql "host=${rds_host} port=${rds_port} dbname=${rds_database} user=${database_user} sslmode=require" \
-    --no-password --tuples-only --no-align --set=ON_ERROR_STOP=1 \
-    --command='SELECT pg_catalog.pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname = current_database();' \
-    2>"${command_error_file}")"; then
+  for ((ownership_attempt = 1; ownership_attempt <= ownership_max_attempts; ownership_attempt++)); do
+    : >"${command_error_file}"
+    if ownership_matches="$(psql -X -qAt \
+      --no-password \
+      --set=ON_ERROR_STOP=1 \
+      --command='SELECT current_user = pg_catalog.pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname = current_database();' \
+      2>"${command_error_file}")"; then
+      rm -f "${command_error_file}"
+      break
+    fi
+
+    diagnostic_category="postgresql_query_failed"
+    if grep -Eqi 'timeout|could not connect|connection (refused|reset)|server closed|remaining connection slots|too many clients' "${command_error_file}"; then
+      diagnostic_category="transient_connection_failure"
+    elif grep -Eqi 'password authentication failed|no pg_hba\.conf entry|permission denied' "${command_error_file}"; then
+      diagnostic_category="authentication_or_access_failure"
+    elif grep -Eqi 'could not translate host name|name or service not known|temporary failure in name resolution' "${command_error_file}"; then
+      diagnostic_category="dns_resolution_failure"
+    elif grep -Eqi 'ssl|certificate' "${command_error_file}"; then
+      diagnostic_category="tls_connection_failure"
+    fi
+
     rm -f "${command_error_file}"
-    unset PGPASSWORD database_password database_user
-    echo "Database ownership verification failed." >&2
+    ownership_matches=""
+    echo "PostgreSQL ownership preflight attempt ${ownership_attempt}/${ownership_max_attempts} failed (${diagnostic_category})." >&2
+
+    if ((ownership_attempt == ownership_max_attempts)); then
+      unset PGHOST PGPORT PGDATABASE PGUSER PGSSLMODE PGPASSWORD database_password database_user
+      echo "PostgreSQL ownership preflight exhausted all retry attempts." >&2
+      return 1
+    fi
+    sleep 5
+  done
+
+  if [[ "${ownership_matches}" != "t" ]]; then
+    unset PGHOST PGPORT PGDATABASE PGUSER PGSSLMODE PGPASSWORD database_password database_user
+    echo "The connected PostgreSQL session does not own the Nexus database." >&2
     return 1
-  fi
-  rm -f "${command_error_file}"
-  database_owner="${database_owner//$'\n'/}"
-  if [[ "${database_owner}" != "${database_user}" ]]; then
-    unset PGPASSWORD database_password
-    echo "The RDS user must own the Nexus database." >&2
-    exit 1
   fi
 
   if ! psql "host=${rds_host} port=${rds_port} dbname=${rds_database} user=${database_user} sslmode=require" \
@@ -227,7 +258,7 @@ SQL
     return 1
   fi
   rm -f "${command_error_file}"
-  unset PGPASSWORD
+  unset PGHOST PGPORT PGDATABASE PGUSER PGSSLMODE PGPASSWORD
 
   mkdir -p "$(dirname "${store_file}")"
   escaped_user="${database_user//\\/\\\\}"
@@ -238,6 +269,7 @@ SQL
     printf 'username=%s\n' "${escaped_user}"
     printf 'password=%s\n' "${escaped_password}"
     printf 'jdbcUrl=jdbc\\:postgresql\\://%s\\:%s/%s?currentSchema=nexus&sslmode=require\n' "${rds_host}" "${rds_port}" "${rds_database}"
+    printf 'maximumPoolSize=20\n'
   } > "${store_file}"
   unset escaped_password
   chmod 0600 "${store_file}"
